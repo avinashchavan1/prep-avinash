@@ -9,6 +9,7 @@ import bash from 'highlight.js/lib/languages/bash'
 import http from 'highlight.js/lib/languages/http'
 import 'highlight.js/styles/atom-one-dark.css'
 import './code.css'
+import './mobile.css'
 
 hljs.registerLanguage('javascript', javascript)
 hljs.registerLanguage('typescript', typescript)
@@ -138,8 +139,25 @@ export default function App() {
         </main>
       </div>
       <button className="fab-top" id="fabTop" onClick={() => contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}>↑</button>
+      <BottomNav activeTab={activeTab} go={go} />
     </>
   )
+}
+
+function BottomNav({ activeTab, go }) {
+  const items = [
+    ['dashboard', '#dashboard', 'Home', <><path d="M3 11l9-8 9 8" /><path d="M5 10v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V10" /></>],
+    ['lib', '#lib', 'Library', <><rect x="3" y="4" width="6" height="16" rx="1" /><rect x="11" y="4" width="6" height="16" rx="1" /><path d="M19 5l2 14" /></>],
+    ['roadmap', '#roadmap', 'Roadmap', <><circle cx="6" cy="6" r="2" /><circle cx="6" cy="18" r="2" /><path d="M6 8v8" /><path d="M11 6h6a2 2 0 0 1 2 2v0a2 2 0 0 1-2 2H9a2 2 0 0 0-2 2" /></>],
+    ['recall', '#recall', 'Recall', <><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></>],
+  ]
+  return <nav className="bottomnav">
+    {items.map(([k, h, label, icon]) =>
+      <button key={k} className={activeTab === k ? 'active' : ''} onClick={() => go(h)}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{icon}</svg>
+        {label}
+      </button>)}
+  </nav>
 }
 
 function Loading() {
