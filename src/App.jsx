@@ -1,4 +1,59 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
+import hljs from 'highlight.js/lib/core'
+import javascript from 'highlight.js/lib/languages/javascript'
+import typescript from 'highlight.js/lib/languages/typescript'
+import css from 'highlight.js/lib/languages/css'
+import xml from 'highlight.js/lib/languages/xml'
+import json from 'highlight.js/lib/languages/json'
+import bash from 'highlight.js/lib/languages/bash'
+import http from 'highlight.js/lib/languages/http'
+import 'highlight.js/styles/atom-one-dark.css'
+import './code.css'
+
+hljs.registerLanguage('javascript', javascript)
+hljs.registerLanguage('typescript', typescript)
+hljs.registerLanguage('css', css)
+hljs.registerLanguage('xml', xml)
+hljs.registerLanguage('json', json)
+hljs.registerLanguage('bash', bash)
+hljs.registerLanguage('http', http)
+const HL_SUBSET = ['typescript', 'javascript', 'css', 'xml', 'json', 'bash', 'http']
+const LANG_LABEL = { typescript: 'ts', javascript: 'js', xml: 'html', css: 'css', json: 'json', bash: 'sh', http: 'http' }
+
+function enhanceCodeBlocks(root) {
+  root.querySelectorAll('pre.code').forEach(pre => {
+    if (pre.dataset.enh) return
+    pre.dataset.enh = '1'
+    const code = pre.querySelector('code')
+    if (!code) return
+    const raw = code.textContent
+    let lang = ''
+    try { const res = hljs.highlightAuto(raw, HL_SUBSET); code.innerHTML = res.value; lang = res.language || '' } catch { }
+    code.classList.add('hljs')
+    // wrap in figure with header
+    const fig = document.createElement('figure')
+    fig.className = 'codeblock'
+    const head = document.createElement('figcaption')
+    head.className = 'code-head'
+    head.innerHTML = `<span class="code-dots"><i></i><i></i><i></i></span><span class="code-lang">${LANG_LABEL[lang] || 'code'}</span>`
+    const btn = document.createElement('button')
+    btn.className = 'copy-btn'
+    btn.type = 'button'
+    btn.innerHTML = COPY_SVG + '<span>Copy</span>'
+    btn.onclick = () => {
+      navigator.clipboard.writeText(raw).then(() => {
+        btn.classList.add('ok'); btn.innerHTML = CHECK_SVG + '<span>Copied</span>'
+        setTimeout(() => { btn.classList.remove('ok'); btn.innerHTML = COPY_SVG + '<span>Copy</span>' }, 1600)
+      })
+    }
+    head.appendChild(btn)
+    pre.parentNode.insertBefore(fig, pre)
+    fig.appendChild(head)
+    fig.appendChild(pre)
+  })
+}
+const COPY_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>'
+const CHECK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>'
 
 const CATS = ['Plan', 'Core', 'Design', 'Advanced', 'Catalog']
 const CATLABEL = {
@@ -210,6 +265,7 @@ function Reader({ doc, anchor, roadmap, progress, saveP, bump, contentRef, go })
 
   useEffect(() => {
     const body = bodyRef.current; if (!body || !doc) return
+    enhanceCodeBlocks(body)
     // checkboxes per topic (h3.h2)
     body.querySelectorAll('h3.h2').forEach(hd => {
       if (hd.querySelector('.chk')) return
