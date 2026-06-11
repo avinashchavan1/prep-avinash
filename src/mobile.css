@@ -38,6 +38,47 @@
   .tbl-wrap, .content-body figure.codeblock, .content-body pre.code { max-width: 100%; }
 }
 
+/* Mode toggle (Interview / All) */
+.side-mode { padding: 6px 10px 10px; border-bottom: 1px solid var(--border); margin-bottom: 6px; }
+.modeseg {
+  display: flex; gap: 4px;
+  background: var(--bg2, #0f1530);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  padding: 4px;
+}
+.modeseg button {
+  flex: 1;
+  background: none; border: none;
+  color: var(--muted);
+  font-family: inherit; font-size: 12.5px; font-weight: 700;
+  padding: 7px 6px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all .15s;
+  white-space: nowrap;
+}
+.modeseg button:hover { color: var(--text); }
+.modeseg button.on {
+  background: linear-gradient(135deg, var(--accent), #5b8dff);
+  color: #fff;
+  box-shadow: 0 2px 10px rgba(124, 92, 255, .35);
+}
+.side-mode-hint { margin: 8px 2px 0; font-size: 11px; color: var(--faint); line-height: 1.4; }
+
+/* Reader mode banner */
+.mode-banner {
+  background: rgba(124, 92, 255, .12);
+  border: 1px solid rgba(124, 92, 255, .35);
+  color: #c9bdff;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+.mode-banner.ref { background: rgba(251, 191, 36, .1); border-color: rgba(251, 191, 36, .35); color: #fcd77a; }
+.mode-banner b { color: #fff; }
+
 /* Bottom navigation (mobile only) */
 .bottomnav {
   position: fixed;

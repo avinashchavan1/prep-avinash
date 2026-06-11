@@ -69,14 +69,20 @@ const WEIGHT = [
   ['Behavioral / leadership', 15, '#fb7185'],
   ['Backend / full-stack awareness', 8, '#a78bfa'],
 ]
-const PKEY = 'fePrep.progress.v1', RKEY = 'fePrep.recall.v1'
-const docSecs = (d) => d.toc.filter(t => t.l === 2).map(t => t.id)
+const PKEY = 'fePrep.progress.v1', RKEY = 'fePrep.recall.v1', MKEY = 'fePrep.mode.v1'
+// mode-aware: 'all' = every topic; 'interview' = only iv-flagged
+const docSecs = (d, mode) => d.toc.filter(t => t.l === 2 && (mode === 'all' || t.iv)).map(t => t.id)
+const docVisible = (d, mode) => mode === 'all' || d.ivVisible
+const visDocs = (DOCS, mode) => DOCS.filter(d => docVisible(d, mode))
+const tocVis = (t, mode) => mode === 'all' || t.iv
+const docPartsCount = (d, mode) => d.toc.filter(t => t.l === 1 && (mode === 'all' || t.iv) && /^(Part|Case|Appendix)/.test(t.t)).length || d.nParts
 
 export default function App() {
   const [db, setDb] = useState(null)
   const [hash, setHash] = useState(window.location.hash || '#dashboard')
   const [query, setQuery] = useState('')
   const [navOpen, setNavOpen] = useState(false)
+  const [mode, setMode] = useState(localStorage.getItem(MKEY) || 'all')
   const [ver, setVer] = useState(0) // bump to refresh progress-derived UI
   const progress = useRef(new Set(JSON.parse(localStorage.getItem(PKEY) || '[]')))
   const recall = useRef(JSON.parse(localStorage.getItem(RKEY) || '{}'))
@@ -101,8 +107,9 @@ export default function App() {
 
   const DOCS = db.docs
   const byId = Object.fromEntries(DOCS.map(d => [d.id, d]))
-  const docPct = (d) => { const s = docSecs(d); if (!s.length) return 0; return Math.round(s.filter(id => progress.current.has(id)).length / s.length * 100) }
-  const overall = () => { let done = 0, tot = 0; DOCS.forEach(d => { const s = docSecs(d); tot += s.length; done += s.filter(id => progress.current.has(id)).length }); return tot ? Math.round(done / tot * 100) : 0 }
+  const docPct = (d) => { const s = docSecs(d, mode); if (!s.length) return 0; return Math.round(s.filter(id => progress.current.has(id)).length / s.length * 100) }
+  const overall = () => { let done = 0, tot = 0; visDocs(DOCS, mode).forEach(d => { const s = docSecs(d, mode); tot += s.length; done += s.filter(id => progress.current.has(id)).length }); return tot ? Math.round(done / tot * 100) : 0 }
+  const changeMode = (m) => { setMode(m); localStorage.setItem(MKEY, m) }
 
   const go = (h) => { if (window.location.hash === h) setHash(h + ''); window.location.hash = h }
 
@@ -119,12 +126,12 @@ export default function App() {
   let view
   if (hash.startsWith('#doc/')) {
     const [id, anchor] = hash.slice(5).split('/')
-    view = <Reader key={id} doc={byId[id]} anchor={anchor} progress={progress} saveP={saveP} bump={bump} contentRef={contentRef} go={go} />
-  } else if (hash === '#lib') view = <Library DOCS={DOCS} docPct={docPct} go={go} />
-  else if (hash === '#roadmap') view = <Reader key="roadmap-01" doc={byId['01']} roadmap progress={progress} saveP={saveP} bump={bump} contentRef={contentRef} go={go} />
-  else if (hash === '#recall') view = <Recall DOCS={DOCS} recall={recall} saveR={saveR} go={go} />
-  else if (hash === '#search') view = <Search DOCS={DOCS} query={query} go={go} />
-  else view = <Dashboard db={db} DOCS={DOCS} docPct={docPct} overall={overall()} progress={progress} go={go} />
+    view = <Reader key={id + mode} doc={byId[id]} anchor={anchor} mode={mode} progress={progress} saveP={saveP} bump={bump} contentRef={contentRef} go={go} />
+  } else if (hash === '#lib') view = <Library DOCS={DOCS} mode={mode} docPct={docPct} go={go} />
+  else if (hash === '#roadmap') view = <Reader key={'roadmap-01' + mode} doc={byId['01']} roadmap mode={mode} progress={progress} saveP={saveP} bump={bump} contentRef={contentRef} go={go} />
+  else if (hash === '#recall') view = <Recall DOCS={DOCS} mode={mode} recall={recall} saveR={saveR} go={go} />
+  else if (hash === '#search') view = <Search DOCS={DOCS} mode={mode} query={query} go={go} />
+  else view = <Dashboard db={db} DOCS={DOCS} mode={mode} docPct={docPct} overall={overall()} progress={progress} go={go} />
 
   const activeTab = hash.startsWith('#doc/') ? '' : hash === '#lib' ? 'lib' : hash === '#roadmap' ? 'roadmap' : hash === '#recall' ? 'recall' : hash === '#search' ? '' : 'dashboard'
 
@@ -132,7 +139,7 @@ export default function App() {
     <>
       <Topbar query={query} onSearch={onSearch} overall={overall()} go={go} activeTab={activeTab} onMenu={() => setNavOpen(o => !o)} />
       <div className="app">
-        <Sidebar DOCS={DOCS} docPct={docPct} curHash={hash} navOpen={navOpen} go={go} />
+        <Sidebar DOCS={DOCS} mode={mode} changeMode={changeMode} docPct={docPct} curHash={hash} navOpen={navOpen} go={go} />
         <div className="scrim" onClick={() => setNavOpen(false)} />
         <main className="content" ref={contentRef} onScroll={(e) => { const b = document.getElementById('fabTop'); if (b) b.style.display = e.target.scrollTop > 500 ? 'block' : 'none' }}>
           <div className="wrap">{view}</div>
@@ -196,10 +203,21 @@ function Topbar({ query, onSearch, overall, go, activeTab, onMenu }) {
   </header>
 }
 
-function Sidebar({ DOCS, docPct, curHash, navOpen, go }) {
+function ModeToggle({ mode, changeMode, compact }) {
+  return <div className={'modeseg' + (compact ? ' compact' : '')} role="tablist" aria-label="Content mode">
+    <button className={mode === 'interview' ? 'on' : ''} onClick={() => changeMode('interview')} title="Curated core set">🎯 Interview</button>
+    <button className={mode === 'all' ? 'on' : ''} onClick={() => changeMode('all')} title="Every topic, as-is">📚 All</button>
+  </div>
+}
+
+function Sidebar({ DOCS, mode, changeMode, docPct, curHash, navOpen, go }) {
   return <aside className="sidebar">
+    <div className="side-mode">
+      <ModeToggle mode={mode} changeMode={changeMode} />
+      <p className="side-mode-hint">{mode === 'interview' ? 'Curated set — what panels actually test.' : 'Full corpus — every topic & tool.'}</p>
+    </div>
     {CATS.map(cat => {
-      const ds = DOCS.filter(d => d.cat === cat); if (!ds.length) return null
+      const ds = DOCS.filter(d => d.cat === cat && docVisible(d, mode)); if (!ds.length) return null
       return <div key={cat}>
         <div className="side-group">{CATLABEL[cat]}</div>
         {ds.map(d => {
@@ -213,7 +231,7 @@ function Sidebar({ DOCS, docPct, curHash, navOpen, go }) {
               <span className={'doc-pct' + (pct === 100 ? ' done' : '')}>{pct}%</span>
             </div>
             <div className="toc">
-              {d.toc.filter(t => t.l <= 2).map(t =>
+              {d.toc.filter(t => t.l <= 2 && tocVis(t, mode)).map(t =>
                 <a key={t.id} className={(t.l === 2 ? 'l2' : '') + (curHash.endsWith('/' + t.id) ? ' cur' : '')}
                   href={'#doc/' + d.id + '/' + t.id} onClick={(e) => e.stopPropagation()}>{t.t}</a>)}
             </div>
@@ -224,32 +242,39 @@ function Sidebar({ DOCS, docPct, curHash, navOpen, go }) {
   </aside>
 }
 
-function DocCard({ d, pct, go }) {
+function DocCard({ d, pct, mode, go }) {
+  const secs = docSecs(d, mode).length
+  const partial = mode === 'interview' && d.ivVisible && secs < d.nSecs
   return <div className="card" onClick={() => go('#doc/' + d.id)}>
     <div className="cnum"><span>DOC {d.num}</span><span className="cic">{d.icon}</span></div>
     <h3>{d.title}</h3>
-    <div className="cmeta">{d.nParts} parts · {d.nSecs} topics · {pct}% done</div>
+    <div className="cmeta">{secs} topics{partial ? ` of ${d.nSecs}` : ''} · {pct}% done{partial ? ' · core slice' : ''}</div>
     <div className="tags">{d.tags.map(t => <span key={t} className="tag">{t}</span>)}</div>
     <div className="mini"><i style={{ width: pct + '%' }} /></div>
   </div>
 }
 
-function Dashboard({ db, DOCS, docPct, overall, progress, go }) {
-  const doneDocs = DOCS.filter(d => docPct(d) === 100).length
-  const doneTopics = DOCS.reduce((a, d) => a + docSecs(d).filter(id => progress.current.has(id)).length, 0)
+function Dashboard({ db, DOCS, mode, docPct, overall, progress, go }) {
+  const vis = visDocs(DOCS, mode)
+  const iv = mode === 'interview'
+  const totalTopics = iv ? db.totalInterviewTopics : db.totalTopics
+  const doneDocs = vis.filter(d => docPct(d) === 100).length
+  const doneTopics = vis.reduce((a, d) => a + docSecs(d, mode).filter(id => progress.current.has(id)).length, 0)
   const reset = () => { if (confirm('Reset all topic progress? This cannot be undone.')) { progress.current = new Set(); localStorage.setItem(PKEY, '[]'); go('#dashboard'); window.location.reload() } }
   return <>
     <div className="hero">
-      <div className="badge">12-Week Plan · Senior Frontend / React · FAANG & product</div>
-      <h1>Your Complete Interview Prep Hub</h1>
-      <p>Every topic from 12 deep-dive playbooks — React internals, system design, DSA, performance, behavioral, and the full 2026 production toolchain — in one trackable workspace.</p>
+      <div className="badge">{iv ? '🎯 Interview mode · curated core' : '📚 All mode · full corpus'} · Senior FE / React</div>
+      <h1>{iv ? 'Focused Interview Prep' : 'Your Complete Prep Hub'}</h1>
+      <p>{iv
+        ? 'The curated set senior panels actually test — JS/TS internals, React 19, system design, DSA, behavioral, plus the highest-signal advanced topics. Switch to “All” for the full corpus.'
+        : 'Every topic from 12 deep-dive playbooks — React internals, system design, DSA, performance, behavioral, and the full 2026 production toolchain — in one trackable workspace.'}</p>
       <div className="statrow">
-        <Stat n={DOCS.length} l="Playbooks" /><Stat n={db.totalParts} l="Parts" /><Stat n={db.totalTopics} l="Topics" /><Stat n="12" l="Weeks" />
+        <Stat n={vis.length} l="Playbooks" /><Stat n={totalTopics} l="Topics" /><Stat n={iv ? '~120' : '12'} l={iv ? 'Hrs focus' : 'Weeks'} /><Stat n={iv ? 'P0–P1' : '674'} l={iv ? 'Priority' : 'All topics'} />
       </div>
     </div>
     <div className="section-title">Your progress</div>
     <div className="progress-card">
-      <div className="flexb"><div><b style={{ fontSize: 15 }}>{overall}% complete</b> <span style={{ color: 'var(--muted)', fontSize: 13 }}>· {doneTopics}/{db.totalTopics} topics · {doneDocs}/{DOCS.length} playbooks finished</span></div>
+      <div className="flexb"><div><b style={{ fontSize: 15 }}>{overall}% complete</b> <span style={{ color: 'var(--muted)', fontSize: 13 }}>· {doneTopics}/{totalTopics} topics · {doneDocs}/{vis.length} playbooks finished</span></div>
         <span className="reset-link" onClick={reset}>reset</span></div>
       <div className={'pbar' + (overall > 60 ? ' good' : '')}><i style={{ width: overall + '%' }} /></div>
     </div>
@@ -260,29 +285,41 @@ function Dashboard({ db, DOCS, docPct, overall, progress, go }) {
       <p style={{ color: 'var(--faint)', fontSize: 12.5, margin: '12px 0 0' }}>Candidates over-invest DSA and under-invest system design + behavioral — that's where seniors get leveled up or down.</p>
     </div>
     <div className="section-title">Playbooks</div>
-    <div className="grid">{DOCS.map(d => <DocCard key={d.id} d={d} pct={docPct(d)} go={go} />)}</div>
+    <div className="grid">{vis.map(d => <DocCard key={d.id} d={d} pct={docPct(d)} mode={mode} go={go} />)}</div>
   </>
 }
 const Stat = ({ n, l }) => <div className="stat"><div className="n">{n}</div><div className="l">{l}</div></div>
 
-function Library({ DOCS, docPct, go }) {
+function Library({ DOCS, mode, docPct, go }) {
+  const vis = visDocs(DOCS, mode)
   return <>
-    <div className="section-title" style={{ marginTop: 8 }}>All playbooks · {DOCS.length}</div>
+    <div className="section-title" style={{ marginTop: 8 }}>{mode === 'interview' ? 'Interview playbooks' : 'All playbooks'} · {vis.length}</div>
     {CATS.map(cat => {
-      const ds = DOCS.filter(d => d.cat === cat); if (!ds.length) return null
+      const ds = vis.filter(d => d.cat === cat); if (!ds.length) return null
       return <div key={cat}>
         <h2 style={{ fontSize: 16, color: 'var(--muted)', margin: '22px 0 12px', fontWeight: 700 }}>{CATLABEL[cat]}</h2>
-        <div className="grid">{ds.map(d => <DocCard key={d.id} d={d} pct={docPct(d)} go={go} />)}</div>
+        <div className="grid">{ds.map(d => <DocCard key={d.id} d={d} pct={docPct(d)} mode={mode} go={go} />)}</div>
       </div>
     })}
   </>
 }
 
-function Reader({ doc, anchor, roadmap, progress, saveP, bump, contentRef, go }) {
+function Reader({ doc, anchor, roadmap, mode, progress, saveP, bump, contentRef, go }) {
   const bodyRef = useRef(null)
 
   useEffect(() => {
     const body = bodyRef.current; if (!body || !doc) return
+    // Interview mode: hide parts not flagged iv
+    if (mode === 'interview') {
+      const hidden = new Set(doc.toc.filter(t => t.l === 1 && !t.iv).map(t => t.id))
+      if (hidden.size) {
+        body.querySelectorAll('h2.h1').forEach(hd => {
+          if (!hidden.has(hd.id)) return
+          let el = hd
+          while (el) { el.style.display = 'none'; const nx = el.nextElementSibling; if (!nx || nx.classList?.contains('h1')) break; el = nx }
+        })
+      }
+    }
     enhanceCodeBlocks(body)
     // checkboxes per topic (h3.h2)
     body.querySelectorAll('h3.h2').forEach(hd => {
@@ -324,10 +361,14 @@ function Reader({ doc, anchor, roadmap, progress, saveP, bump, contentRef, go })
       else contentRef.current?.scrollTo({ top: 0 })
     }, 30)
     return () => obs.disconnect()
-  }, [doc?.id, anchor])
+  }, [doc?.id, anchor, mode])
 
   if (!doc) return <div className="empty">Not found.</div>
+  const refHidden = mode === 'interview' && !doc.ivVisible
+  const partialDoc = mode === 'interview' && doc.ivVisible && doc.ivSecs < doc.nSecs
   return <>
+    {refHidden && <div className="mode-banner ref">This playbook is a <b>reference catalog</b> — hidden in Interview mode. Showing it anyway. Switch to <b>All</b> for the rest of the corpus.</div>}
+    {partialDoc && <div className="mode-banner">Interview mode · showing the <b>core {doc.ivSecs} of {doc.nSecs}</b> topics. Switch to <b>All</b> for everything in this playbook.</div>}
     {roadmap
       ? <div className="doc-hd"><div className="crumb">Doc 01 · study plan</div><h1>🗺️ 12-Week Roadmap & Skills Inventory</h1>
         <p style={{ color: 'var(--muted)', margin: '6px 0 0' }}>The week-by-week path that sequences every playbook. Check off topics inside each doc — progress flows back to your dashboard.</p></div>
@@ -337,11 +378,12 @@ function Reader({ doc, anchor, roadmap, progress, saveP, bump, contentRef, go })
   </>
 }
 
-function Recall({ DOCS, recall, saveR, go }) {
+function Recall({ DOCS, mode, recall, saveR, go }) {
   const all = useRef(null)
   if (!all.current) {
     const cards = []
     DOCS.forEach(d => {
+      const ivSet = new Set(d.toc.filter(t => t.l === 2 && t.iv).map(t => t.id))
       const tmp = document.createElement('div'); tmp.innerHTML = d.html
       const nodes = [...tmp.children]
       nodes.forEach((n, i) => {
@@ -349,13 +391,13 @@ function Recall({ DOCS, recall, saveR, go }) {
           const title = n.textContent.replace(/^\d+(\.\d+)*\s*/, '').trim()
           let ans = ''
           for (let j = i + 1; j < nodes.length; j++) { const m = nodes[j]; if (m.tagName === 'H2' || m.tagName === 'H3') break; ans += m.textContent.trim() + '\n'; if (ans.length > 520) break }
-          cards.push({ q: title, a: ans.trim().slice(0, 520), doc: d.id, docName: d.short, cat: d.cat, sec: n.id })
+          cards.push({ q: title, a: ans.trim().slice(0, 520), doc: d.id, docName: d.short, cat: d.cat, sec: n.id, iv: ivSet.has(n.id) })
         }
       })
     })
     all.current = cards
   }
-  const ALL = all.current
+  const ALL = all.current.filter(c => mode === 'all' || c.iv)
   const [filter, setFilter] = useState('all')
   const [idx, setIdx] = useState(0)
   const [flipped, setFlipped] = useState(false)
@@ -366,17 +408,18 @@ function Recall({ DOCS, recall, saveR, go }) {
     for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[arr[i], arr[j]] = [arr[j], arr[i]] }
     deck.current = arr; setIdx(0); setFlipped(false)
   }
-  useEffect(() => { buildDeck(filter) }, [filter])
+  useEffect(() => { setFilter('all') }, [mode])
+  useEffect(() => { buildDeck(filter) }, [filter, mode])
   const d = deck.current[idx]
   const rate = (v) => { if (d) { recall.current[d.q] = v; saveR() } setIdx(i => (i + 1) % deck.current.length); setFlipped(false); force(x => x + 1) }
   const next = () => { setIdx(i => (i + 1) % deck.current.length); setFlipped(false) }
   const prev = () => { setIdx(i => (i - 1 + deck.current.length) % deck.current.length); setFlipped(false) }
   const got = deck.current.filter(c => recall.current[c.q] === 'good').length
   const again = deck.current.filter(c => recall.current[c.q] === 'again').length
-  const cats = ['all', ...CATS]
+  const cats = ['all', ...CATS.filter(c => ALL.some(x => x.cat === c))]
   return <>
-    <div className="section-title" style={{ marginTop: 8 }}>Active recall · {ALL.length} topic cards</div>
-    <p style={{ color: 'var(--muted)', fontSize: 14, marginTop: -4 }}>One card per topic across all 12 playbooks. Read the cue, explain it aloud, flip to check, then rate yourself. Re-drill the "again" pile.</p>
+    <div className="section-title" style={{ marginTop: 8 }}>Active recall · {ALL.length} {mode === 'interview' ? 'core' : 'topic'} cards</div>
+    <p style={{ color: 'var(--muted)', fontSize: 14, marginTop: -4 }}>{mode === 'interview' ? 'Core topics only — the curated interview set.' : 'One card per topic across all 12 playbooks.'} Read the cue, explain it aloud, flip to check, then rate yourself. Re-drill the "again" pile.</p>
     <div className="pill-row">{cats.map(c => <span key={c} className={'pill' + (c === filter ? ' active' : '')} onClick={() => setFilter(c)}>{c === 'all' ? 'All' : CATLABEL[c] || c}</span>)}</div>
     <div className="flashwrap">
       <div className={'flash' + (flipped ? ' flipped' : '')} onClick={() => setFlipped(f => !f)}>
@@ -398,13 +441,13 @@ function Recall({ DOCS, recall, saveR, go }) {
   </>
 }
 
-function Search({ DOCS, query, go }) {
+function Search({ DOCS, mode, query, go }) {
   const q = query.trim()
   if (q.length < 2) return <div className="empty">Type at least 2 characters to search.</div>
   const ql = q.toLowerCase()
   const res = []
-  DOCS.forEach(d => {
-    d.toc.forEach(t => { if (t.t.toLowerCase().includes(ql)) res.push({ d, t, type: 'h' }) })
+  visDocs(DOCS, mode).forEach(d => {
+    d.toc.forEach(t => { if (tocVis(t, mode) && t.t.toLowerCase().includes(ql)) res.push({ d, t, type: 'h' }) })
     const i = d.search.toLowerCase().indexOf(ql); if (i >= 0) res.push({ d, idx: i, type: 'c' })
   })
   const hl = (t) => { const i = t.toLowerCase().indexOf(ql); if (i < 0) return t; return <>{t.slice(0, i)}<mark>{t.slice(i, i + q.length)}</mark>{t.slice(i + q.length)}</> }
